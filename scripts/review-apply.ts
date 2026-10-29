@@ -21,12 +21,13 @@ async function main() {
   if (!file) throw new Error("Usage: npm run review:apply -- review.json [--dry]");
   const input = ReviewInput.parse(JSON.parse(readFileSync(file, "utf8")));
   const db = getDb();
-  const date = today();
 
   for (const e of input.entries) {
     const [port] = await db.select().from(schema.portfolios).where(eq(schema.portfolios.id, e.portfolioId));
     if (!port) throw new Error(`No portfolio ${e.portfolioId}`);
     const existing = await db.select().from(schema.journal).where(eq(schema.journal.portfolioId, e.portfolioId));
+    // The review belongs to the trading day it reviews: the engine's latest run (dated in UTC), not the clock.
+    const date = existing.filter((j) => j.author === "engine").reduce((a, j) => (j.date > a ? j.date : a), "") || today();
     if (existing.some((j) => j.author === "review" && j.date === date)) {
       console.log(`${e.portfolioId}: a review for ${date} already exists, skipping.`);
       continue;

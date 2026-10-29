@@ -36,7 +36,10 @@ async function main() {
   const out: string[] = [];
   const p = (s = "") => out.push(s);
 
-  p(`# Daily review briefing, ${new Date().toISOString().slice(0, 10)}`);
+  const [lastRun] = await db.select({ date: snapshots.date }).from(snapshots).orderBy(desc(snapshots.date)).limit(1);
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  p(`# Daily review briefing, ${new Date().toISOString().slice(0, 10)} (UTC)`);
+  p(`Latest engine run: ${lastRun?.date ?? "none"}.${lastRun && lastRun.date < yesterday ? " WARNING: older than yesterday (UTC), so the daily GitHub job may have failed." : ""}`);
   p("\n## Market climate");
   for (const c of Object.values(climates)) p(`- **${c.market}: ${c.level}**. ${c.points.map((x) => x.text).join("; ")}.`);
 

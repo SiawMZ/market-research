@@ -7,8 +7,10 @@ the strategy is working, and amend a rule only when the evidence supports it.
 ## Steps
 
 1. In this project folder, run `npm run review:context` and read the whole briefing.
-   - If the newest journal entries are not from today, the daily job may have failed. Say so in the review and
-     don't change any rules.
+   - The engine dates its runs in UTC, so at 8:00 am Malaysia time the latest run is normally yesterday's UTC date.
+     If the briefing shows a WARNING that the latest run is older than that, the daily job may have failed: say so
+     in the review and don't change any rules.
+   - If a review already exists for the latest engine run, `review:apply` skips it. That's expected on a re-run.
 2. For each portfolio (balanced, aggressive), write a journal entry of 120 to 300 words, in plain English:
    - **What happened today:** trades and exits, and the reason for each, in your own words.
    - **Scorecard:** return since start against hold BTC, hold VOO and 50/50, with the actual numbers from the briefing.
