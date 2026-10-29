@@ -1,0 +1,35 @@
+name: Collect market data
+
+on:
+  schedule:
+    # 22:30 UTC on weekdays: after the US close (and 06:30 MYT, before Bursa opens).
+    - cron: "30 22 * * 1-5"
+    # Weekends: crypto only trades, so a lighter crypto-only run.
+    - cron: "30 22 * * 0,6"
+  workflow_dispatch: {}
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Weekday run (everything)
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 22 * * 1-5'
+        run: npm run collect
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Weekend run (crypto only)
+        if: github.event.schedule == '30 22 * * 0,6'
+        run: npm run collect -- crypto stablecoins etf
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
