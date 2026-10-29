@@ -3,7 +3,19 @@ import { cache } from "react";
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db/client";
 import { isoDate } from "@/collectors/core";
-import { change, last, maxDrawdown, rsi, sma, trendLabel, volatility } from "@/lib/indicators";
+import { change, last, macd, maxDrawdown, rsi, sma, trendLabel, volatility } from "@/lib/indicators";
+
+/** Did the MACD histogram change sign in the last n bars? Positive after negative = bullish cross. */
+function recentCross(hist: (number | null)[], n = 5): "bullish" | "bearish" | null {
+  const h = hist.slice(-(n + 1));
+  for (let i = h.length - 1; i > 0; i--) {
+    const [a, b] = [h[i - 1], h[i]];
+    if (a == null || b == null) continue;
+    if (a <= 0 && b > 0) return "bullish";
+    if (a >= 0 && b < 0) return "bearish";
+  }
+  return null;
+}
 
 const { assets, pricesDaily, fundamentals, metrics, etfFlows, derivatives, macroEvents, insiderTrades, portfolios, trades, snapshots, journal, collectorRuns } = schema;
 
@@ -41,6 +53,10 @@ export type MarketRow = {
   priceToBook: number | null;
   spark: number[];
   extra: Record<string, unknown> | null;
+  /** MACD line crossed its signal line within the last 5 bars. */
+  macdCross: "bullish" | "bearish" | null;
+  /** Price vs its 50-day average (0.1 = 10% above). */
+  fromMa50: number | null;
 };
 
 export const getMarketRows = cache(async (market: Market, kinds?: string[]): Promise<MarketRow[]> => {
@@ -119,6 +135,8 @@ export const getMarketRows = cache(async (market: Market, kinds?: string[]): Pro
       priceToBook: f?.price_to_book ?? null,
       spark: closes.slice(-60),
       extra: f?.extra ?? null,
+      macdCross: recentCross(macd(closes).hist),
+      fromMa50: ma50 ? price / ma50 - 1 : null,
     });
   }
   // Largest first, so tables open on the names that matter most.

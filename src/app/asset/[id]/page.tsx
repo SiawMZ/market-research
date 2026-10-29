@@ -5,6 +5,9 @@ import { Card, Delta, PageHeader, Section, Stat, TrendBadge } from "@/components
 import { getAsset, getCandles, getInsiderTrades, getMarketRows } from "@/lib/data";
 import { fmt, fmtPrice } from "@/lib/format";
 import { readSignals } from "@/lib/signals";
+import { getClimates } from "@/lib/climate";
+import { SIGNALS, assetTiming } from "@/lib/timing";
+import { SignalBadge } from "@/components/Timing";
 
 export const revalidate = 3600;
 
@@ -12,12 +15,17 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
   const id = decodeURIComponent((await params).id);
   const asset = await getAsset(id);
   if (!asset) notFound();
-  const [candles, rows, insiders] = await Promise.all([
+  const market = asset.market as "crypto" | "us" | "my";
+  const [candles, rows, insiders, climates] = await Promise.all([
     getCandles(id),
-    getMarketRows(asset.market as "crypto" | "us" | "my"),
+    getMarketRows(market),
     asset.market === "us" ? getInsiderTrades(500) : Promise.resolve([]),
+    getClimates(),
   ]);
   const row = rows.find((r) => r.id === id);
+  const climate = climates[market];
+  // Indices and ETFs are timed the same way; the climate still applies.
+  const timing = row ? assetTiming(row, climate.level) : null;
   const signals = row ? readSignals(row) : [];
   const mine = insiders.filter((t) => t.ticker === asset.symbol);
   const back = asset.market === "crypto" ? "/crypto" : asset.market === "my" ? "/stocks?m=my" : "/stocks";
@@ -47,6 +55,26 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
             <Stat label="P/E · P/B" value={`${fmt(row.peTrailing, "num")} · ${fmt(row.priceToBook, "num")}`} note={row.peForward ? `Forward P/E ${row.peForward.toFixed(1)}` : undefined} />
           )}
         </div>
+      )}
+
+      {timing && (
+        <Card className="mb-8 flex flex-wrap items-start gap-x-6 gap-y-2">
+          <div>
+            <div className="text-xs text-muted">Timing now</div>
+            <div className="mt-1">
+              <SignalBadge signal={timing.signal} />
+            </div>
+          </div>
+          <div className="min-w-0 flex-1 text-sm">
+            <p>{timing.reason}</p>
+            <p className="mt-1 text-xs text-ink-2">
+              {SIGNALS[timing.signal].meaning} Market climate for {climate.market}: <span className="font-medium">{climate.level}</span>.{" "}
+              <Link href="/#timing" className="underline">
+                See why
+              </Link>
+            </p>
+          </div>
+        </Card>
       )}
 
       <Section title="Chart and indicators">

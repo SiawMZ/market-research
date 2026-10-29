@@ -3,6 +3,10 @@ import { Card, Delta, PageHeader, Section, Stat, TrendBadge, sentimentBand } fro
 import { getEtfFlows, getMarketRows, getMetric, getPortfolios, type MarketRow } from "@/lib/data";
 import { fmt, fmtPrice } from "@/lib/format";
 import { median, moodIndex, moodLabel } from "@/lib/signals";
+import { getScoredUniverse } from "@/lib/ideas";
+import { getClimates } from "@/lib/climate";
+import { assetTiming, type Climate, type Signal } from "@/lib/timing";
+import { ClimateCard, SignalLegend, TimingTable } from "@/components/Timing";
 
 export const revalidate = 3600;
 
@@ -23,7 +27,7 @@ function marketStats(label: string, rows: MarketRow[], bench: MarketRow | undefi
 }
 
 export default async function SummaryPage() {
-  const [crypto, us, my, macro, fng, flows, portfolios] = await Promise.all([
+  const [crypto, us, my, macro, fng, flows, portfolios, universe, climates] = await Promise.all([
     getMarketRows("crypto"),
     getMarketRows("us", ["stock", "etf"]),
     getMarketRows("my", ["stock"]),
@@ -31,6 +35,8 @@ export default async function SummaryPage() {
     getMetric("crypto_fear_greed", 30),
     getEtfFlows(40),
     getPortfolios(),
+    getScoredUniverse(),
+    getClimates(),
   ]);
   const m = (s: string) => macro.find((x) => x.symbol === s);
   const usStocks = us.filter((r) => r.kind === "stock");
@@ -42,6 +48,26 @@ export default async function SummaryPage() {
     marketStats("US stocks", usStocks, us.find((r) => r.symbol === "SPY")),
     marketStats("Bursa Malaysia", my, m("^KLSE")),
   ];
+
+  // ---- Timing: market climate first, then per-asset signals tempered by it ----
+  const withTiming = (rows: typeof crypto, level: Climate["level"]) => rows.map((r) => ({ ...r, timing: assetTiming(r, level) }));
+  const timed = { crypto: withTiming(crypto, climates.crypto.level), us: withTiming(us, climates.us.level), my: withTiming(my, climates.my.level) };
+  const counts = (rows: { timing: { signal: Signal } }[]) =>
+    rows.reduce<Partial<Record<Signal, number>>>((a, r) => ({ ...a, [r.timing.signal]: (a[r.timing.signal] ?? 0) + 1 }), {});
+
+  // Key assets: the majors plus today's highest-potential ideas, so the table covers what you'd actually consider buying.
+  const KEY = ["crypto:BTC", "crypto:ETH", "crypto:SOL", "us:SPY", "us:QQQ", "us:NVDA", "us:AAPL", "us:MSFT", "my:1155.KL", "my:1295.KL", "my:5347.KL"];
+  const ideaIds = [
+    ...[...universe.us].sort((a, b) => (b.potential ?? -1) - (a.potential ?? -1)).slice(0, 4),
+    ...[...universe.my].sort((a, b) => (b.potential ?? -1) - (a.potential ?? -1)).slice(0, 2),
+    ...[...universe.crypto].filter((r) => r.symbol !== "BTC" && r.symbol !== "ETH").sort((a, b) => (b.potential ?? -1) - (a.potential ?? -1)).slice(0, 3),
+  ].map((r) => r.id);
+  const allTimed = [...timed.crypto, ...timed.us, ...timed.my];
+  const ORDER: Signal[] = ["buy", "add", "hold", "wait", "chase", "avoid"];
+  const keyRows = [...new Set([...KEY, ...ideaIds])]
+    .map((id) => allTimed.find((r) => r.id === id))
+    .filter((r): r is (typeof allTimed)[number] => r != null)
+    .sort((a, b) => ORDER.indexOf(a.timing.signal) - ORDER.indexOf(b.timing.signal));
 
   const all = [...crypto, ...usStocks, ...my];
   // Dip candidates: oversold on RSI but still in a long-term uptrend (price above the 200-day average).
@@ -67,7 +93,29 @@ export default async function SummaryPage() {
         </div>
       </Section>
 
-      <Section n="02" title="Compare the markets" why="Median of the assets we track in each market, plus its benchmark. Volatility is how violently prices swing (yearly basis).">
+      <Section
+        id="timing"
+        n="02"
+        title="Timing: buy or sell now?"
+        why="Separate from whether an asset is good: this asks whether now is a good moment. The market climate comes first, because most assets move with their market. Each asset's signal reads its own trend and momentum, and steps down a notch when its market is cautious or risky."
+      >
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          <ClimateCard c={climates.crypto} counts={counts(timed.crypto)} />
+          <ClimateCard c={climates.us} counts={counts(timed.us)} />
+          <ClimateCard c={climates.my} counts={counts(timed.my)} />
+        </div>
+        <h3 className="mb-2 text-sm font-medium">Key assets and today&apos;s top ideas</h3>
+        <TimingTable rows={keyRows} />
+        <div className="mt-4">
+          <SignalLegend />
+        </div>
+        <p className="mt-3 text-xs text-muted">
+          Rules-based signals from daily closes: trend (50- and 200-day averages), RSI, distance from the 50-day average and MACD crossovers. They describe the
+          set-up, not the future. Not financial advice. Every asset&apos;s signal is also on its detail page.
+        </p>
+      </Section>
+
+      <Section n="03" title="Compare the markets" why="Median of the assets we track in each market, plus its benchmark. Volatility is how violently prices swing (yearly basis).">
         <Card className="p-0 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -100,7 +148,7 @@ export default async function SummaryPage() {
         </Card>
       </Section>
 
-      <Section n="03" title="What stands out" why="Across crypto, US and Bursa. These are starting points for research, not buy or sell calls.">
+      <Section n="04" title="What stands out" why="Across crypto, US and Bursa. These are starting points for research, not buy or sell calls.">
         <div className="grid gap-4 md:grid-cols-2">
           <PickList title="Dip candidates" note="RSI under 35 but still above the 200-day average" rows={dips} metric={(r) => `RSI ${r.rsi14!.toFixed(0)}`} />
           <PickList title="Stretched" note="RSI over 70: strong, but often due a pause" rows={stretched} metric={(r) => `RSI ${r.rsi14!.toFixed(0)}`} />
@@ -110,7 +158,7 @@ export default async function SummaryPage() {
       </Section>
 
       <Section
-        n="04"
+        n="05"
         title="Paper portfolios"
         why="Two $1,000 strategies, judged against simply holding BTC, VOO, or a 50/50 mix."
         aside={<Link href="/portfolio?view=compare" className="text-sm text-ink-2 hover:text-ink">Compare in detail →</Link>}

@@ -14,9 +14,9 @@ export function PageHeader({ title, intro, children }: { title: string; intro?: 
 }
 
 /** A numbered section, Swiss style: a step number, a title, and a one-line "why it matters". */
-export function Section({ n, title, why, children, aside }: { n?: string; title: string; why?: string; children: ReactNode; aside?: ReactNode }) {
+export function Section({ n, title, why, children, aside, id }: { n?: string; title: string; why?: string; children: ReactNode; aside?: ReactNode; id?: string }) {
   return (
-    <section className="mb-10">
+    <section id={id} className="mb-10 scroll-mt-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2 border-t border-ink pt-3">
         <h2 className="text-base font-semibold">
           {n && <span className="mr-2 text-muted tabular">{n}</span>}

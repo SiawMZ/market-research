@@ -53,24 +53,69 @@ const Timeseries = z.object({
   }),
 });
 
-const Point = z.array(z.object({ reportedValue: z.object({ raw: z.number() }) }).nullable());
+const Point = z.array(
+  z.object({ asOfDate: z.string().optional(), currencyCode: z.string().optional(), reportedValue: z.object({ raw: z.number() }).optional() }).nullable(),
+);
 
-/** Latest value of each valuation ratio. Missing for ETFs and indices; that's expected. */
-async function valuation(symbol: string): Promise<Partial<Record<(typeof VALUATION_TYPES)[number], number>>> {
+/** Annual statement lines used for quality and growth. Two years are fetched so growth can be computed. */
+const ANNUAL_TYPES = [
+  "annualTotalRevenue",
+  "annualNetIncome",
+  "annualFreeCashFlow",
+  "annualStockholdersEquity",
+  "annualTotalDebt",
+  "annualCashDividendsPaid",
+] as const;
+const EXTRA_RATIOS = ["trailingPegRatio", "trailingEnterprisesValueEBITDARatio"] as const;
+
+type FieldType = (typeof VALUATION_TYPES)[number] | (typeof ANNUAL_TYPES)[number] | (typeof EXTRA_RATIOS)[number];
+type Field = { last: number; prev: number | null; currency: string | null };
+
+/** Latest (and previous) value of each valuation ratio and annual line. Missing for ETFs and some stocks; that's expected. */
+async function fundamentalsOf(symbol: string): Promise<Partial<Record<FieldType, Field>>> {
   const now = Math.floor(Date.now() / 1000);
+  const types = [...VALUATION_TYPES, ...ANNUAL_TYPES, ...EXTRA_RATIOS];
   const res = await fetchJson(
-    `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?type=${VALUATION_TYPES.join(",")}&period1=${now - 30 * 86_400}&period2=${now}`,
+    `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?type=${types.join(",")}&period1=${now - 800 * 86_400}&period2=${now}`,
     Timeseries,
     { headers: BROWSER },
   );
-  const out: Partial<Record<(typeof VALUATION_TYPES)[number], number>> = {};
+  const out: Partial<Record<FieldType, Field>> = {};
   for (const r of res.timeseries.result ?? []) {
-    const type = r.meta.type[0] as (typeof VALUATION_TYPES)[number];
+    const type = r.meta.type[0] as FieldType;
     const pts = Point.safeParse(r[type]);
-    const last = pts.success ? pts.data.filter(Boolean).at(-1) : undefined;
-    if (last) out[type] = last.reportedValue.raw;
+    const vals = pts.success ? pts.data.filter((p) => p?.reportedValue != null) : [];
+    const last = vals.at(-1);
+    if (last?.reportedValue) {
+      out[type] = { last: last.reportedValue.raw, prev: vals.at(-2)?.reportedValue?.raw ?? null, currency: last.currencyCode ?? null };
+    }
   }
   return out;
+}
+
+/**
+ * Quality and growth ratios from the annual lines. Ratios that mix statement and market-cap values are only
+ * computed when both are in the same currency (ADRs like TSM report in TWD while their market cap is in USD).
+ */
+function derive(f: Partial<Record<FieldType, Field>>) {
+  const mc = f.trailingMarketCap;
+  const sameCcy = (x?: Field) => x && mc && (!x.currency || !mc.currency || x.currency === mc.currency);
+  const growth = (x?: Field) => (x && x.prev && x.prev > 0 ? x.last / x.prev - 1 : null);
+  const ni = f.annualNetIncome;
+  const eq = f.annualStockholdersEquity;
+  const fcf = f.annualFreeCashFlow;
+  const div = f.annualCashDividendsPaid;
+  return {
+    roe: ni && eq && eq.last > 0 ? ni.last / eq.last : null,
+    fcfYield: fcf && sameCcy(fcf) ? fcf.last / mc!.last : null,
+    dividendYield: div && sameCcy(div) ? Math.abs(div.last) / mc!.last : null,
+    revenueGrowth: growth(f.annualTotalRevenue),
+    earningsGrowth: growth(ni),
+    debtToEquity: f.annualTotalDebt && eq && eq.last > 0 ? f.annualTotalDebt.last / eq.last : null,
+    netMargin: ni && f.annualTotalRevenue?.last ? ni.last / f.annualTotalRevenue.last : null,
+    peg: f.trailingPegRatio?.last ?? null,
+    evEbitda: f.trailingEnterprisesValueEBITDARatio?.last ?? null,
+  };
 }
 
 /** Daily candles (2 years) plus a valuation snapshot for every US and Bursa stock we track. */
@@ -115,20 +160,21 @@ export const stockMarket: Collector = {
         });
 
         if (d.kind !== "index") {
-          const v = d.kind === "stock" ? await valuation(d.symbol) : {};
+          const v = d.kind === "stock" ? await fundamentalsOf(d.symbol) : {};
+          const q = derive(v);
           const last63 = volumes.slice(-63);
           fundRows.push({
             assetId: d.id,
             date,
-            marketCap: v.trailingMarketCap ?? null,
-            peTrailing: v.trailingPeRatio ?? null,
-            peForward: v.forwardPeRatio ?? null,
-            priceToBook: v.trailingPbRatio ?? null,
-            dividendYield: null,
+            marketCap: v.trailingMarketCap?.last ?? null,
+            peTrailing: v.trailingPeRatio?.last ?? null,
+            peForward: v.forwardPeRatio?.last ?? null,
+            priceToBook: v.trailingPbRatio?.last ?? null,
+            dividendYield: q.dividendYield,
             high52w: r.meta.fiftyTwoWeekHigh ?? null,
             low52w: r.meta.fiftyTwoWeekLow ?? null,
             avgVolume3m: last63.length ? last63.reduce((a, b) => a + b, 0) / last63.length : null,
-            extra: { price: r.meta.regularMarketPrice ?? null, priceToSales: v.trailingPsRatio ?? null },
+            extra: { price: r.meta.regularMarketPrice ?? null, priceToSales: v.trailingPsRatio?.last ?? null, ...q },
           });
         }
       } catch (err) {
