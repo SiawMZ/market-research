@@ -176,7 +176,7 @@ export default async function SummaryPage() {
                 <div className="mt-2 text-2xl font-semibold tabular">{fmt(equity, "price")}</div>
                 <Delta v={equity / p.startCashUsd - 1} />
                 <p className="mt-3 text-sm text-ink-2">
-                  {p.journal[0]?.summary ?? "No trades yet. The daily review that makes and explains decisions starts in Phase 5."}
+                  {p.journal[0]?.summary.split("\n")[0] ?? "No trades yet. The first trades happen on the next daily run."}
                 </p>
               </Card>
             );

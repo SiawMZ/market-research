@@ -12,12 +12,40 @@ export type Rules = {
   rebalance: "drift" | "weekly-momentum";
   driftBand: number; // rebalance when a sleeve is this far from target
   leverage: 1;
-  fees: { usStockUsd: number; myStockPct: number; myStockMinMyr: number; cryptoPct: number; slippagePct: number };
+  fees: Fees;
   myBoardLot: number; // Bursa trades in lots of 100 shares
 };
 
-/** Fee model approximating Moomoo MY public pricing; checked again before the first trade. */
-const fees: Rules["fees"] = { usStockUsd: 0.99, myStockPct: 0.0003, myStockMinMyr: 3, cryptoPct: 0.001, slippagePct: 0.001 };
+export type Fees = {
+  usCommissionPct: number;
+  usPlatformUsd: number; // per order
+  usSettlementPerShareUsd: number; // capped at usSettlementCapPct of the trade
+  usSettlementCapPct: number;
+  myCommissionPct: number;
+  myPlatformMyr: number; // per order
+  myClearingPct: number;
+  myStampPerThousandMyr: number; // RM1 per RM1,000 (or part of it)
+  cryptoPct: number;
+  slippagePct: number; // assumed price slippage on every fill
+};
+
+/**
+ * Moomoo Malaysia fees after the 180-day new-user zero-commission promo (checked 30 Oct 2026 against
+ * moomoo.com/my/pricing and 2026 third-party guides; the official page doesn't list platform/clearing fees).
+ * Moomoo MY doesn't sell crypto, so crypto assumes a typical 0.1% exchange fee.
+ */
+const fees: Fees = {
+  usCommissionPct: 0.0003,
+  usPlatformUsd: 0.99,
+  usSettlementPerShareUsd: 0.003,
+  usSettlementCapPct: 0.01,
+  myCommissionPct: 0.0003,
+  myPlatformMyr: 3,
+  myClearingPct: 0.0003,
+  myStampPerThousandMyr: 1,
+  cryptoPct: 0.001,
+  slippagePct: 0.001,
+};
 
 export const PORTFOLIOS: { id: "balanced" | "aggressive"; name: string; startCashUsd: number; rules: Rules }[] = [
   {

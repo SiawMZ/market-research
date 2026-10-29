@@ -180,6 +180,7 @@ export const journal = pgTable("journal", {
   id: serial("id").primaryKey(),
   portfolioId: text("portfolio_id").notNull().references(() => portfolios.id),
   date: date("date").notNull(),
+  author: text("author", { enum: ["engine", "review"] }).notNull().default("engine"),
   summary: text("summary").notNull(),
   ruleChanges: jsonb("rule_changes").$type<{ rule: string; from: unknown; to: unknown; why: string }[]>(),
 });

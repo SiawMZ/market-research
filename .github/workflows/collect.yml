@@ -1,4 +1,4 @@
-name: Collect market data
+name: Collect market data and trade
 
 on:
   schedule:
@@ -31,5 +31,12 @@ jobs:
       - name: Weekend run (crypto only)
         if: github.event.schedule == '30 22 * * 0,6'
         run: npm run collect -- crypto stablecoins etf
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Trade the paper portfolios on the fresh data. Runs even if one collector failed:
+      # the engine works from the latest prices it has. It only trades stocks on weekdays.
+      - name: Paper-trading engine
+        if: success() || failure()
+        run: npm run daily
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

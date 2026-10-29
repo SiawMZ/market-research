@@ -5,6 +5,7 @@ import { BENCHMARKS, type Rules } from "@/config/portfolios";
 import { getCandles, getPortfolios } from "@/lib/data";
 import { fmt } from "@/lib/format";
 import { maxDrawdown, volatility } from "@/lib/indicators";
+import { replay } from "@/lib/ledger";
 
 export const revalidate = 3600;
 
@@ -99,7 +100,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           </Card>
         ) : (
           <Empty title="No history yet">
-            Both portfolios start with $1,000 in cash on {start}. The value curve appears after the daily review (Phase 5) makes its first trades and records daily snapshots.
+            Both portfolios started with $1,000 on {start}. The value curve appears once there are two daily snapshots, after the next daily run.
           </Empty>
         )}
       </Section>
@@ -163,23 +164,137 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
 
       <div className={`grid gap-x-6 ${shown.length > 1 ? "lg:grid-cols-2" : ""}`}>
         {shown.map((p) => (
-          <Section key={p.id} n="04" title={`${shown.length > 1 ? `${p.name}: ` : ""}Holdings, trades and journal`}>
-            {p.trades.length === 0 && p.journal.length === 0 ? (
-              <Empty title="Holding $1,000 cash">No trades or journal entries yet.</Empty>
-            ) : (
-              <Card className="text-sm">
-                {p.journal.slice(0, 10).map((j) => (
-                  <div key={j.id} className="border-t border-line py-2 first:border-t-0">
-                    <div className="text-xs text-muted">{j.date}</div>
-                    <p>{j.summary}</p>
-                  </div>
-                ))}
-              </Card>
-            )}
-          </Section>
+          <div key={p.id}>
+            <Section n="04" title={`${shown.length > 1 ? `${p.name}: ` : ""}Holdings`} why="Valued at the latest daily close. P/L is against the average price paid, before fees.">
+              <Holdings p={p} />
+            </Section>
+            <Section
+              n="05"
+              title={`${shown.length > 1 ? `${p.name}: ` : ""}Journal`}
+              why="Engine entries are the mechanical record of each day. Review entries are the daily AI review: what's working, what isn't, and any rule change with its reason."
+            >
+              <Journal p={p} />
+            </Section>
+            <Section n="06" title={`${shown.length > 1 ? `${p.name}: ` : ""}Trades`}>
+              <Trades p={p} />
+            </Section>
+          </div>
         ))}
       </div>
     </>
+  );
+}
+
+const short = (id: string) => id.split(":")[1].replace(".KL", "");
+const MARKET_LABEL: Record<string, string> = { crypto: "Crypto", us: "US", my: "Bursa" };
+
+function Holdings({ p }: { p: Portfolio }) {
+  const snap = p.snapshots.at(-1);
+  if (!snap) return <Empty title="Holding $1,000 cash">The first trades happen on the next daily run.</Empty>;
+  const { holdings } = replay(p.trades, p.startCashUsd);
+  const avg = new Map(holdings.map((h) => [h.assetId, h.avgUsd]));
+  const rows = [...snap.holdings].sort((a, b) => b.valueUsd - a.valueUsd);
+  return (
+    <Card className="p-0 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-muted">
+            <th className="px-4 py-2 text-left font-normal">Asset</th>
+            <th className="px-4 py-2 text-right font-normal">Value</th>
+            <th className="px-4 py-2 text-right font-normal">Weight</th>
+            <th className="px-4 py-2 text-right font-normal">P/L</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((h) => {
+            const cost = (avg.get(h.assetId) ?? 0) * h.qty;
+            return (
+              <tr key={h.assetId} className="border-t border-line">
+                <td className="px-4 py-1.5">
+                  <Link href={`/asset/${encodeURIComponent(h.assetId)}`} className="hover:underline">
+                    <span className="mr-2 text-xs text-muted">{MARKET_LABEL[h.assetId.split(":")[0]]}</span>
+                    <span className="font-medium">{short(h.assetId)}</span>
+                  </Link>
+                </td>
+                <td className="px-4 py-1.5 text-right tabular">{fmt(h.valueUsd, "price")}</td>
+                <td className="px-4 py-1.5 text-right tabular">{fmt(h.valueUsd / snap.equityUsd, "pct").replace("+", "")}</td>
+                <td className="px-4 py-1.5 text-right">
+                  <Delta v={cost > 0 ? h.valueUsd / cost - 1 : null} />
+                </td>
+              </tr>
+            );
+          })}
+          <tr className="border-t border-line text-ink-2">
+            <td className="px-4 py-1.5">Cash</td>
+            <td className="px-4 py-1.5 text-right tabular">{fmt(snap.cashUsd, "price")}</td>
+            <td className="px-4 py-1.5 text-right tabular">{fmt(snap.cashUsd / snap.equityUsd, "pct").replace("+", "")}</td>
+            <td />
+          </tr>
+        </tbody>
+      </table>
+      <p className="border-t border-line px-4 py-2 text-xs text-muted">As of {snap.date}</p>
+    </Card>
+  );
+}
+
+function Journal({ p }: { p: Portfolio }) {
+  if (p.journal.length === 0) return <Empty title="No entries yet">The engine writes one every day; the AI review adds its own.</Empty>;
+  return (
+    <Card className="space-y-4 text-sm">
+      {p.journal.slice(0, 14).map((j) => (
+        <article key={j.id} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
+          <div className="mb-1 flex items-center gap-2 text-xs text-muted">
+            <span className="tabular">{j.date}</span>
+            <span className={`rounded border px-1.5 py-0.5 ${j.author === "review" ? "border-ink-2 text-ink" : "border-line"}`}>
+              {j.author === "review" ? "AI review" : "Engine"}
+            </span>
+          </div>
+          <p className="whitespace-pre-line leading-relaxed">{j.summary}</p>
+          {(j.ruleChanges ?? []).length > 0 && (
+            <ul className="mt-2 space-y-1 rounded bg-surface-2 px-3 py-2 text-xs">
+              {j.ruleChanges!.map((c) => (
+                <li key={c.rule}>
+                  <span className="font-medium">Rule change: {c.rule}</span> {JSON.stringify(c.from)} → {JSON.stringify(c.to)}. {c.why}
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+      ))}
+    </Card>
+  );
+}
+
+function Trades({ p }: { p: Portfolio }) {
+  if (p.trades.length === 0) return <p className="text-sm text-ink-2">No trades yet.</p>;
+  return (
+    <Card className="p-0 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-muted">
+            <th className="px-4 py-2 text-left font-normal">Date</th>
+            <th className="px-4 py-2 text-left font-normal">Trade</th>
+            <th className="px-4 py-2 text-right font-normal">Amount</th>
+            <th className="px-4 py-2 text-right font-normal">Fee</th>
+            <th className="px-4 py-2 text-left font-normal">Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {p.trades.slice(0, 40).map((t) => (
+            <tr key={t.id} className="border-t border-line align-top">
+              <td className="px-4 py-1.5 tabular whitespace-nowrap">{t.at.toISOString().slice(0, 10)}</td>
+              <td className="px-4 py-1.5 whitespace-nowrap">
+                <span className={t.side === "buy" ? "text-up" : "text-down"}>{t.side === "buy" ? "▲ Buy" : "▼ Sell"}</span>{" "}
+                <span className="font-medium">{short(t.assetId)}</span>
+              </td>
+              <td className="px-4 py-1.5 text-right tabular whitespace-nowrap">{fmt(t.qty * t.priceUsd, "price")}</td>
+              <td className="px-4 py-1.5 text-right tabular whitespace-nowrap text-ink-2">{fmt(t.feeUsd, "price")}</td>
+              <td className="px-4 py-1.5 text-xs text-ink-2 min-w-64">{t.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
   );
 }
 
@@ -193,7 +308,10 @@ function RuleCard({ name, rules }: { name: string; rules: Rules }) {
     ["Trailing stop", rules.trailingStop ? `sell at −${pc(rules.trailingStop)}% from the high since entry` : "none"],
     ["How it trades", rules.rebalance === "drift" ? `rebalance when a part drifts ${pc(rules.driftBand)}% from target` : "weekly rotation into the strongest momentum"],
     ["Leverage", "none"],
-    ["Fees modelled", `US $${rules.fees.usStockUsd}/order · Bursa ${pc(rules.fees.myStockPct)}% (min RM${rules.fees.myStockMinMyr}) · crypto ${pc(rules.fees.cryptoPct)}% · slippage ${pc(rules.fees.slippagePct)}%`],
+    [
+      "Fees modelled",
+      `US ${pc(rules.fees.usCommissionPct)}% + $${rules.fees.usPlatformUsd}/order + $${rules.fees.usSettlementPerShareUsd}/share · Bursa ${pc(rules.fees.myCommissionPct)}% + RM${rules.fees.myPlatformMyr}/order + ${pc(rules.fees.myClearingPct)}% clearing + stamp duty · crypto ${pc(rules.fees.cryptoPct)}% · slippage ${pc(rules.fees.slippagePct)}%`,
+    ],
   ];
   return (
     <Card>

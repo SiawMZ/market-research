@@ -1,9 +1,10 @@
 import type { Rules } from "@/config/portfolios";
 import type { Scored } from "@/lib/scoring";
+import { orderFeeUsd } from "@/lib/fees";
 
 /*
  * "What would I buy with $X?" Turns a profile's rulebook plus the current scores into concrete orders.
- * Pure function: the planner page uses it, and the Phase 5 daily review will reuse it for the paper portfolios.
+ * Pure function: the planner page uses it, and the trading engine uses it as each paper portfolio's target.
  */
 
 export type Sleeve = "crypto" | "us" | "my";
@@ -14,7 +15,14 @@ export type PlanInput = {
   markets: Record<Sleeve, boolean>;
   fractionalUs: boolean;
   style: "balanced" | "aggressive";
+  /** Assets already held get a ranking bonus, so the portfolio doesn't churn on small score changes. */
+  held?: Set<string>;
+  /** Assets not to buy today (e.g. timing says "avoid"); they're skipped when ranking picks. */
+  skip?: Set<string>;
 };
+
+/** Score points a held asset gets when ranking. A newcomer must beat it by more than this to replace it. */
+const HOLD_BONUS = 10;
 
 export type Universe = { crypto: Scored[]; us: Scored[]; my: Scored[]; etfs: Scored[]; usdMyr: number | null };
 
@@ -34,12 +42,14 @@ const MIN_TICKET_USD = 25;
 const SMALL_AMOUNT_USD = 300;
 
 const notDown = (r: Scored) => r.trend !== "Downtrend" && r.trend !== "—";
-const byPotential = (a: Scored, b: Scored) => (b.potential ?? -1) - (a.potential ?? -1);
-const byMomentumLed = (a: Scored, b: Scored) =>
-  (b.factors.momentum ?? 0) * 0.6 + (b.potential ?? 0) * 0.4 - ((a.factors.momentum ?? 0) * 0.6 + (a.potential ?? 0) * 0.4);
 
 export function buildPlan(input: PlanInput, u: Universe): Plan {
   const { amountUsd, rules, markets, style } = input;
+  const bonus = (r: Scored) => (input.held?.has(r.id) ? HOLD_BONUS : 0);
+  const eligible = (r: Scored) => !input.skip?.has(r.id);
+  const byPotential = (a: Scored, b: Scored) => (b.potential ?? -1) + bonus(b) - ((a.potential ?? -1) + bonus(a));
+  const byMomentumLed = (a: Scored, b: Scored) =>
+    (b.factors.momentum ?? 0) * 0.6 + (b.potential ?? 0) * 0.4 + bonus(b) - ((a.factors.momentum ?? 0) * 0.6 + (a.potential ?? 0) * 0.4 + bonus(a));
   const notes: string[] = [];
   const fx = u.usdMyr ?? 4.2;
   const slip = rules.fees.slippagePct;
@@ -71,24 +81,23 @@ export function buildPlan(input: PlanInput, u: Universe): Plan {
     const budget = Math.min(budgetUsd, role === "pick" && sleeve === "crypto" ? rules.maxSmallAlt * amountUsd : cap);
     if (budget < MIN_TICKET_USD) return false;
     const priceUsd = asset.currency === "MYR" ? asset.price / fx : asset.price;
+    const fill = priceUsd * (1 + slip);
+    const feeOf = (q: number) => orderFeeUsd(sleeve, q, fill, rules.fees, fx);
     let qty: number;
-    let fee: number;
     if (sleeve === "my") {
-      const lotUsd = priceUsd * rules.myBoardLot;
-      const lots = Math.floor(budget / (lotUsd * (1 + slip) + rules.fees.myStockMinMyr / fx));
+      // Whole board lots only: start from what the budget could buy and step down until cost plus fees fit.
+      let lots = Math.floor(budget / (fill * rules.myBoardLot));
+      while (lots > 0 && lots * rules.myBoardLot * fill + feeOf(lots * rules.myBoardLot) > budget) lots--;
       if (lots < 1) return false;
       qty = lots * rules.myBoardLot;
-      fee = Math.max(qty * priceUsd * rules.fees.myStockPct, rules.fees.myStockMinMyr / fx);
-    } else if (sleeve === "us") {
-      fee = rules.fees.usStockUsd;
-      const raw = (budget - fee) / (priceUsd * (1 + slip));
-      qty = input.fractionalUs ? Math.floor(raw * 10_000) / 10_000 : Math.floor(raw);
-      if (qty <= 0) return false;
     } else {
-      qty = budget / (priceUsd * (1 + slip) * (1 + rules.fees.cryptoPct));
-      fee = qty * priceUsd * rules.fees.cryptoPct;
+      // Fees depend on size, so estimate once from the gross quantity, then size the order net of that fee.
+      const raw = (budget - feeOf(budget / fill)) / fill;
+      qty = sleeve === "us" && !input.fractionalUs ? Math.floor(raw) : Math.floor(raw * 1e6) / 1e6;
+      if (qty <= 0) return false;
     }
-    const cost = qty * priceUsd * (1 + slip);
+    const fee = feeOf(qty);
+    const cost = qty * fill;
     leftover += budgetUsd - cost - fee;
     lines.push({ asset, sleeve, role, qty, costUsd: cost, feeUsd: fee, why });
     return true;
@@ -98,7 +107,7 @@ export function buildPlan(input: PlanInput, u: Universe): Plan {
   if (target.crypto > 0) {
     const btc = u.crypto.find((r) => r.symbol === "BTC");
     const eth = u.crypto.find((r) => r.symbol === "ETH");
-    const alts = u.crypto.filter((r) => r.symbol !== "BTC" && r.symbol !== "ETH" && notDown(r) && r.potential != null).sort(byPotential);
+    const alts = u.crypto.filter((r) => r.symbol !== "BTC" && r.symbol !== "ETH" && notDown(r) && eligible(r) && r.potential != null).sort(byPotential);
     const altCount = small ? 0 : style === "aggressive" ? 2 : 1;
     const weights = small ? { btc: 1, eth: 0 } : style === "aggressive" ? { btc: 0.4, eth: 0.25 } : { btc: 0.6, eth: 0.25 };
     const altBudget = altCount ? (target.crypto * (1 - weights.btc - weights.eth)) / altCount : 0;
@@ -123,7 +132,7 @@ export function buildPlan(input: PlanInput, u: Universe): Plan {
       leftover += target.us * coreShare;
     }
     const rest = target.us * (core ? 1 - coreShare : 1);
-    const pool = u.us.filter((r) => notDown(r) && r.potential != null && !r.flags.includes("Loss-making")).sort(style === "aggressive" ? byMomentumLed : byPotential);
+    const pool = u.us.filter((r) => notDown(r) && eligible(r) && r.potential != null && !r.flags.includes("Loss-making")).sort(style === "aggressive" ? byMomentumLed : byPotential);
     const n = Math.max(1, Math.min(style === "aggressive" ? 4 : 3, Math.floor(rest / (MIN_TICKET_USD * 2))));
     let placed = 0;
     for (const s of pool) {
@@ -135,7 +144,7 @@ export function buildPlan(input: PlanInput, u: Universe): Plan {
 
   // 4. Bursa: whole lots of 100 shares only, so walk down the ranking until lots fit the budget.
   if (target.my > 0) {
-    const pool = u.my.filter((r) => notDown(r) && r.potential != null).sort(byPotential);
+    const pool = u.my.filter((r) => notDown(r) && eligible(r) && r.potential != null).sort(byPotential);
     const n = Math.max(1, Math.min(3, Math.floor(target.my / 150)));
     let placed = 0;
     for (const s of pool) {
