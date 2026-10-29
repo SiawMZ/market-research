@@ -15,7 +15,9 @@ the strategy is working, and amend a rule only when the evidence supports it.
    - **What happened today:** trades and exits, and the reason for each, in your own words.
    - **Scorecard:** return since start against hold BTC, hold VOO and 50/50, with the actual numbers from the briefing.
    - **What's working and what isn't:** which holdings or rules are helping or hurting, and why.
-   - **What to watch:** upcoming macro events, positions near a stop, signals that could flip.
+   - **What to watch:** upcoming macro events, positions near a stop, signals that could flip, and anything notable
+     in the "Sentiment and big money" section. Read the headlines themselves; the tone number is only a keyword count.
+     Mention news only when it's in the briefing, and attribute it to its source.
    - **Rule changes:** none, or the change and the evidence for it.
 3. Rule changes should be rare. Change a rule only when there is a pattern over several days, not one bad day.
    Examples: a stop-loss that keeps cutting positions just before they recover, or a market that has been stuck

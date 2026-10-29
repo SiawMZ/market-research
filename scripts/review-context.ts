@@ -9,6 +9,7 @@ import { and, asc, desc, eq, gte } from "drizzle-orm";
 import type { Rules } from "@/config/portfolios";
 import { getDb, schema } from "@/lib/db/client";
 import { getClimates } from "@/lib/climate";
+import { getFundMoves, getNews, getSocial } from "@/lib/data";
 import { getScoredUniverse } from "@/lib/ideas";
 import { replay } from "@/lib/ledger";
 import { fmt } from "@/lib/format";
@@ -80,6 +81,25 @@ async function main() {
       p(`- ${j.date} [${j.author}] ${j.summary.replace(/\n/g, " / ")}`);
       for (const c of j.ruleChanges ?? []) p(`  - rule change ${c.rule}: ${JSON.stringify(c.from)} → ${JSON.stringify(c.to)} (${c.why})`);
     }
+  }
+
+  // Sentiment for what the portfolios hold: read the headlines yourself; the tone score is only a keyword count.
+  const [newsBy, social, funds] = await Promise.all([getNews(), getSocial(), getFundMoves()]);
+  p("\n## Sentiment and big money for held assets");
+  for (const id of [...heldAnywhere].sort()) {
+    const sym = id.split(":")[1];
+    const items = newsBy.get(id) ?? [];
+    const tone = items.length ? items.reduce((a, n) => a + n.score, 0) / items.length : null;
+    const reddit = social.reddit.find((r) => r.ticker === sym);
+    const trending = social.trending.find((r) => r.ticker === sym);
+    const fund = funds.tickers.find((t) => t.ticker === sym);
+    const extras = [
+      reddit ? `Reddit #${reddit.rank} (${reddit.mentions} mentions, ${reddit.mentions_24h_ago ?? "?"} a day earlier)` : null,
+      trending ? `CoinGecko trending #${trending.rank}` : null,
+      fund ? `superinvestors ${fund.buyers.length} buying / ${fund.sellers.length} selling (${fund.periods.join(", ")})` : null,
+    ].filter(Boolean);
+    p(`- **${id}**: news tone ${tone == null ? "no headlines" : `${tone.toFixed(2)} over ${items.length} headlines`}${extras.length ? `; ${extras.join("; ")}` : ""}`);
+    for (const n of items.slice(0, 3)) p(`  - "${n.title}" (${n.source ?? "?"}, ${n.publishedAt.toISOString().slice(0, 10)})`);
   }
 
   p("\n## Best ideas not held by either portfolio (top 4 per market by overall score)");

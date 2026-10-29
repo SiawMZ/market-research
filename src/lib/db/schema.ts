@@ -137,6 +137,68 @@ export const insiderTrades = pgTable(
   (t) => [index("insider_trades_ticker_idx").on(t.ticker)],
 );
 
+// ---------- Sentiment and whales ----------
+
+/** Social attention: Reddit mention counts (ApeWisdom) and CoinGecko's trending list. */
+export const socialMentions = pgTable(
+  "social_mentions",
+  {
+    source: text("source").notNull(), // "apewisdom" | "coingecko-trending"
+    ticker: text("ticker").notNull(),
+    date: date("date").notNull(),
+    name: text("name"),
+    rank: integer("rank").notNull(),
+    mentions: integer("mentions"),
+    mentions24hAgo: integer("mentions_24h_ago"),
+    upvotes: integer("upvotes"),
+  },
+  (t) => [primaryKey({ columns: [t.source, t.ticker, t.date] })],
+);
+
+/** Recent headlines per tracked asset, with a simple keyword sentiment score from -1 to 1. */
+export const news = pgTable(
+  "news",
+  {
+    id: text("id").primaryKey(), // article link
+    assetId: text("asset_id").notNull().references(() => assets.id),
+    title: text("title").notNull(),
+    source: text("source"),
+    publishedAt: timestamp("published_at", { withTimezone: true }).notNull(),
+    score: doublePrecision("score").notNull(),
+  },
+  (t) => [index("news_asset_idx").on(t.assetId, t.publishedAt)],
+);
+
+/** Daily net flows into each centralised exchange (DefiLlama). Outflows usually mean coins moving to self-custody. */
+export const exchangeFlows = pgTable(
+  "exchange_flows",
+  {
+    exchange: text("exchange").notNull(),
+    date: date("date").notNull(),
+    assetsUsd: doublePrecision("assets_usd"),
+    inflow24hUsd: doublePrecision("inflow_24h_usd"),
+    inflow1wUsd: doublePrecision("inflow_1w_usd"),
+    inflow1mUsd: doublePrecision("inflow_1m_usd"),
+  },
+  (t) => [primaryKey({ columns: [t.exchange, t.date] })],
+);
+
+/** Superinvestor 13F moves for the latest quarter (Dataroma): each manager's top buys and sells. */
+export const fundMoves = pgTable(
+  "fund_moves",
+  {
+    period: text("period").notNull(), // e.g. "Q2 2026"
+    manager: text("manager").notNull(),
+    ticker: text("ticker").notNull(),
+    company: text("company"),
+    side: text("side", { enum: ["buy", "sell"] }).notNull(),
+    action: text("action").notNull(), // "Buy", "Add 69.37%", "Reduce -83.61%", "Sell"
+    portfolioChangePct: doublePrecision("portfolio_change_pct"),
+    collectedAt: date("collected_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.period, t.manager, t.ticker] })],
+);
+
 // ---------- Paper portfolios ----------
 
 export const portfolios = pgTable("portfolios", {

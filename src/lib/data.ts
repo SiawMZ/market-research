@@ -214,6 +214,73 @@ export const getPortfolios = cache(async () => {
   }));
 });
 
+// ---------- Sentiment and whales ----------
+
+const { socialMentions, news, exchangeFlows, fundMoves } = schema;
+
+/** Latest Reddit mention ranking (ApeWisdom) and CoinGecko trending list. */
+export const getSocial = cache(async () => {
+  const db = getDb();
+  const rows = await db.execute<{ source: string; ticker: string; name: string | null; rank: number; mentions: number | null; mentions_24h_ago: number | null; upvotes: number | null; date: string }>(
+    sql`select source, ticker, name, rank, mentions, mentions_24h_ago, upvotes, date::text from ${socialMentions} m
+        where date = (select max(date) from ${socialMentions} x where x.source = m.source) order by source, rank`,
+  );
+  return { reddit: rows.rows.filter((r) => r.source === "apewisdom"), trending: rows.rows.filter((r) => r.source === "coingecko-trending") };
+});
+
+export type Headline = typeof news.$inferSelect;
+
+/** Headlines from the last 3 days, newest first, grouped by asset. */
+export const getNews = cache(async (): Promise<Map<string, Headline[]>> => {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(news)
+    .where(gte(news.publishedAt, new Date(Date.now() - 3 * 86_400_000)))
+    .orderBy(desc(news.publishedAt));
+  const by = new Map<string, Headline[]>();
+  for (const r of rows) by.set(r.assetId, [...(by.get(r.assetId) ?? []), r]);
+  return by;
+});
+
+export const getExchangeFlows = cache(async () => {
+  const db = getDb();
+  const rows = await db.execute<{ exchange: string; assets_usd: number | null; inflow_24h_usd: number | null; inflow_1w_usd: number | null; inflow_1m_usd: number | null; date: string }>(
+    sql`select exchange, assets_usd, inflow_24h_usd, inflow_1w_usd, inflow_1m_usd, date::text from ${exchangeFlows}
+        where date = (select max(date) from ${exchangeFlows}) order by assets_usd desc nulls last`,
+  );
+  return rows.rows;
+});
+
+/** Superinvestor moves aggregated per ticker: how many managers bought vs sold in their latest 13F. */
+export const getFundMoves = cache(async () => {
+  const db = getDb();
+  const rows = await db.select().from(fundMoves);
+  // Keep each manager's most recent quarter only.
+  const qKey = (p: string) => {
+    const [q, y] = p.split(" ");
+    return Number(y) * 10 + Number(q.replace("Q", ""));
+  };
+  const latest = new Map<string, number>();
+  for (const r of rows) latest.set(r.manager, Math.max(latest.get(r.manager) ?? 0, qKey(r.period)));
+  const current = rows.filter((r) => qKey(r.period) === latest.get(r.manager));
+  const by = new Map<string, { ticker: string; company: string | null; buyers: string[]; sellers: string[]; periods: Set<string>; newBuys: number }>();
+  for (const r of current) {
+    const e = by.get(r.ticker) ?? { ticker: r.ticker, company: r.company, buyers: [], sellers: [], periods: new Set<string>(), newBuys: 0 };
+    (r.side === "buy" ? e.buyers : e.sellers).push(r.manager);
+    if (r.side === "buy" && r.action.toLowerCase() === "buy") e.newBuys++;
+    e.periods.add(r.period);
+    by.set(r.ticker, e);
+  }
+  const all = [...by.values()].map((e) => ({ ...e, periods: [...e.periods].sort() }));
+  const periodCounts = new Map<string, number>();
+  for (const q of latest.values()) {
+    const label = `Q${q % 10} ${Math.floor(q / 10)}`;
+    periodCounts.set(label, (periodCounts.get(label) ?? 0) + 1);
+  }
+  return { tickers: all, managers: latest.size, periodCounts: [...periodCounts.entries()].sort((a, b) => b[1] - a[1]) };
+});
+
 /** Most recent run of each collector, for the "data freshness" footer. */
 export const getFreshness = cache(async () => {
   const db = getDb();

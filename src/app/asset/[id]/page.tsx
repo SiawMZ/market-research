@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { Card, Delta, PageHeader, Section, Stat, TrendBadge } from "@/components/ui";
-import { getAsset, getCandles, getInsiderTrades, getMarketRows } from "@/lib/data";
+import { getAsset, getCandles, getFundMoves, getInsiderTrades, getMarketRows, getNews, getSocial } from "@/lib/data";
+import { NewsList, ToneBadge } from "@/components/NewsList";
 import { fmt, fmtPrice } from "@/lib/format";
 import { readSignals } from "@/lib/signals";
 import { getClimates } from "@/lib/climate";
@@ -16,12 +17,19 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
   const asset = await getAsset(id);
   if (!asset) notFound();
   const market = asset.market as "crypto" | "us" | "my";
-  const [candles, rows, insiders, climates] = await Promise.all([
+  const [candles, rows, insiders, climates, newsBy, social, funds] = await Promise.all([
     getCandles(id),
     getMarketRows(market),
     asset.market === "us" ? getInsiderTrades(500) : Promise.resolve([]),
     getClimates(),
+    getNews(),
+    getSocial(),
+    getFundMoves(),
   ]);
+  const headlines = newsBy.get(id) ?? [];
+  const reddit = asset.market === "us" ? social.reddit.find((r) => r.ticker === asset.symbol) : undefined;
+  const trending = asset.market === "crypto" ? social.trending.find((r) => r.ticker === asset.symbol) : undefined;
+  const fund = asset.market === "us" ? funds.tickers.find((t) => t.ticker.replace(".", "-") === asset.symbol) : undefined;
   const row = rows.find((r) => r.id === id);
   const climate = climates[market];
   // Indices and ETFs are timed the same way; the climate still applies.
@@ -98,6 +106,42 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
               ))}
             </ul>
           </Card>
+        </Section>
+      )}
+
+      {(headlines.length > 0 || reddit || trending || fund) && (
+        <Section title="Sentiment and big money" why="What the news, the crowd and large investors are doing with this asset.">
+          <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+            <Card>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <span className="text-sm font-medium">News, last 3 days</span>
+                {headlines.length > 0 && <ToneBadge score={headlines.reduce((a, n) => a + n.score, 0) / headlines.length} count={headlines.length} />}
+              </div>
+              {headlines.length ? <NewsList items={headlines} /> : <p className="text-sm text-ink-2">No recent headlines collected for this asset.</p>}
+            </Card>
+            <div className="space-y-3">
+              {reddit && (
+                <Stat
+                  label="Reddit buzz"
+                  value={`#${reddit.rank}`}
+                  sub={<span className="text-ink-2">{fmt(reddit.mentions, "num")} mentions in 24h</span>}
+                  note={reddit.mentions_24h_ago ? `A day ago: ${reddit.mentions_24h_ago} mentions.` : undefined}
+                />
+              )}
+              {trending && <Stat label="CoinGecko trending" value={`#${trending.rank}`} note="Among the most-searched coins today." />}
+              {fund && (
+                <Stat
+                  label={`Superinvestors (${fund.periods.join(", ")})`}
+                  value={
+                    <span className="text-lg">
+                      <span className="text-up">▲ {fund.buyers.length} buying</span> <span className="text-down">▼ {fund.sellers.length} selling</span>
+                    </span>
+                  }
+                  note={[...fund.buyers, ...fund.sellers].slice(0, 4).join(", ")}
+                />
+              )}
+            </div>
+          </div>
         </Section>
       )}
 

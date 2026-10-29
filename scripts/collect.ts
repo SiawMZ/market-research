@@ -11,8 +11,13 @@ import { upsert, type Collector } from "@/collectors/core";
 import { btcEtfFlows, cryptoDerivatives, cryptoFearGreed, cryptoMarket, stablecoins } from "@/collectors/crypto";
 import { stockMarket } from "@/collectors/stocks";
 import { insiders, macroCalendar } from "@/collectors/macro";
+import { cexFlows, newsHeadlines, social, superinvestors } from "@/collectors/sentiment";
 
-const ALL: Collector[] = [cryptoMarket, cryptoFearGreed, stablecoins, cryptoDerivatives, btcEtfFlows, stockMarket, macroCalendar, insiders];
+// Order matters: news picks its assets from the social ranking and the portfolios' holdings.
+const ALL: Collector[] = [
+  cryptoMarket, cryptoFearGreed, stablecoins, cryptoDerivatives, btcEtfFlows, stockMarket, macroCalendar, insiders,
+  social, cexFlows, superinvestors, newsHeadlines,
+];
 
 async function main() {
   const args = process.argv.slice(2);

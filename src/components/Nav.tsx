@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/", label: "Summary" },
   { href: "/crypto", label: "Crypto" },
   { href: "/stocks", label: "Stocks" },
+  { href: "/sentiment", label: "Sentiment" },
   { href: "/screener", label: "Screener" },
   { href: "/ideas", label: "Ideas" },
   { href: "/planner", label: "Planner" },
