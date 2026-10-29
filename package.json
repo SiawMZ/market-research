@@ -14,11 +14,11 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1",
-    "drizzle-orm": "^0.44.5",
+    "drizzle-orm": "^0.45.4",
     "lightweight-charts": "^5.0.8",
-    "next": "15.5.4",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "next": "^15.5.28",
+    "react": "^19.1.10",
+    "react-dom": "^19.1.10",
     "server-only": "^0.0.1",
     "zod": "^3.25.76"
   },
@@ -31,7 +31,7 @@
     "dotenv": "^17.2.2",
     "drizzle-kit": "^0.31.4",
     "eslint": "^9",
-    "eslint-config-next": "15.5.4",
+    "eslint-config-next": "^15.5.28",
     "tailwindcss": "^4",
     "tsx": "^4.20.5",
     "typescript": "^5"
