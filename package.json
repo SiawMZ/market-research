@@ -15,9 +15,11 @@
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1",
     "drizzle-orm": "^0.44.5",
+    "lightweight-charts": "^5.0.8",
     "next": "15.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "server-only": "^0.0.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {

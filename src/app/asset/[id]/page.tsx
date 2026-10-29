@@ -1,0 +1,110 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { PriceChart } from "@/components/charts/PriceChart";
+import { Card, Delta, PageHeader, Section, Stat, TrendBadge } from "@/components/ui";
+import { getAsset, getCandles, getInsiderTrades, getMarketRows } from "@/lib/data";
+import { fmt, fmtPrice } from "@/lib/format";
+import { readSignals } from "@/lib/signals";
+
+export const revalidate = 3600;
+
+export default async function AssetPage({ params }: { params: Promise<{ id: string }> }) {
+  const id = decodeURIComponent((await params).id);
+  const asset = await getAsset(id);
+  if (!asset) notFound();
+  const [candles, rows, insiders] = await Promise.all([
+    getCandles(id),
+    getMarketRows(asset.market as "crypto" | "us" | "my"),
+    asset.market === "us" ? getInsiderTrades(500) : Promise.resolve([]),
+  ]);
+  const row = rows.find((r) => r.id === id);
+  const signals = row ? readSignals(row) : [];
+  const mine = insiders.filter((t) => t.ticker === asset.symbol);
+  const back = asset.market === "crypto" ? "/crypto" : asset.market === "my" ? "/stocks?m=my" : "/stocks";
+
+  return (
+    <>
+      <Link href={back} className="text-sm text-ink-2 hover:text-ink">
+        ← Back
+      </Link>
+      <PageHeader
+        title={`${asset.symbol.replace(".KL", "")} · ${asset.name}`}
+        intro={[asset.market === "crypto" ? "Crypto" : asset.market === "my" ? "Bursa Malaysia" : "US", asset.sector, asset.kind.toUpperCase()].filter(Boolean).join(" · ")}
+      >
+        {row && <TrendBadge trend={row.trend} />}
+      </PageHeader>
+
+      {row && (
+        <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+          <Stat label="Price" value={fmtPrice(row.price, row.currency)} sub={<Delta v={row.chg1d} />} note={`as of ${row.asOf}`} />
+          <Stat label="30 days" value={<Delta v={row.chg30d} />} />
+          <Stat label="1 year" value={<Delta v={row.chg1y} />} note={`Worst fall in the year ${fmt(row.drawdown1y, "pct")}`} />
+          <Stat label="Volatility" value={fmt(row.volatility, "pct").replace("+", "")} note="Annualised, last 90 days" />
+          <Stat label="RSI (14)" value={fmt(row.rsi14, "num")} note="Over 70 hot, under 30 cold" />
+          {asset.market === "crypto" ? (
+            <Stat label="Market cap" value={fmt(row.marketCap, "usd")} />
+          ) : (
+            <Stat label="P/E · P/B" value={`${fmt(row.peTrailing, "num")} · ${fmt(row.priceToBook, "num")}`} note={row.peForward ? `Forward P/E ${row.peForward.toFixed(1)}` : undefined} />
+          )}
+        </div>
+      )}
+
+      <Section title="Chart and indicators">
+        {candles.length ? <PriceChart candles={candles} currency={asset.currency} /> : <p className="text-sm text-ink-2">No price history yet.</p>}
+      </Section>
+
+      {signals.length > 0 && (
+        <Section title="What the indicators say" why="Plain-language reading of the numbers above. Indicators describe the past; they don't promise the next move.">
+          <Card>
+            <ul className="space-y-2 text-sm">
+              {signals.map((s) => (
+                <li key={s.text} className="flex gap-2">
+                  <span aria-hidden className={s.tone === "positive" ? "text-up" : s.tone === "negative" ? "text-down" : "text-muted"}>
+                    {s.tone === "positive" ? "▲" : s.tone === "negative" ? "▼" : "●"}
+                  </span>
+                  <span>
+                    <span className="sr-only">{s.tone}: </span>
+                    {s.text}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </Section>
+      )}
+
+      {mine.length > 0 && (
+        <Section title="Insider trades" why="Recent Form 4 filings by this company's executives and directors.">
+          <Card className="p-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-muted">
+                  <th className="px-4 py-1.5 text-left font-normal">Date</th>
+                  <th className="px-4 py-1.5 text-left font-normal">Insider</th>
+                  <th className="px-4 py-1.5 text-left font-normal">Type</th>
+                  <th className="px-4 py-1.5 text-right font-normal">Price</th>
+                  <th className="px-4 py-1.5 text-right font-normal">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mine.map((t) => (
+                  <tr key={t.id} className="border-t border-line">
+                    <td className="px-4 py-1.5 tabular">{t.tradeDate}</td>
+                    <td className="px-4 py-1.5">
+                      {t.insider} <span className="text-ink-2">{t.title}</span>
+                    </td>
+                    <td className="px-4 py-1.5">{t.type}</td>
+                    <td className="px-4 py-1.5 text-right tabular">{fmt(t.price, "price")}</td>
+                    <td className="px-4 py-1.5 text-right">
+                      <Delta v={t.valueUsd} kind="usd" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </Section>
+      )}
+    </>
+  );
+}
