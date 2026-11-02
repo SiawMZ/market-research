@@ -122,17 +122,20 @@ function derive(f: Partial<Record<FieldType, Field>>) {
 export const stockMarket: Collector = {
   name: "stock-market",
   description: "Yahoo Finance candles + valuation, US and Bursa Malaysia",
-  async run() {
+  async run(opts) {
+    const light = opts?.light ?? false;
+    // Bursa's index and the ringgit rate are stored under "us" but belong to the Bursa session.
+    const wanted = defs.filter((d) => !opts?.markets || opts.markets.includes(d.market) || (opts.markets.includes("my") && (d.symbol === "^KLSE" || d.symbol === "MYR=X")));
     const date = today();
     const failed: string[] = [];
     const assetRows: (typeof assets.$inferInsert)[] = [];
     const candles: (typeof pricesDaily.$inferInsert)[] = [];
     const fundRows: (typeof fundamentals.$inferInsert)[] = [];
 
-    for (const d of defs) {
+    for (const d of wanted) {
       try {
         const res = await fetchJson(
-          `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(d.symbol)}?range=2y&interval=1d`,
+          `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(d.symbol)}?range=${light ? "5d" : "2y"}&interval=1d`,
           Chart,
           { headers: BROWSER },
         );
@@ -159,7 +162,8 @@ export const stockMarket: Collector = {
           updatedAt: new Date(),
         });
 
-        if (d.kind !== "index") {
+        // Valuations come from the full daily run; writing them here would blank today's row.
+        if (d.kind !== "index" && !light) {
           const v = d.kind === "stock" ? await fundamentalsOf(d.symbol) : {};
           const q = derive(v);
           const last63 = volumes.slice(-63);

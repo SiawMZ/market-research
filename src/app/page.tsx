@@ -8,7 +8,7 @@ import { getClimates } from "@/lib/climate";
 import { assetTiming, type Climate, type Signal } from "@/lib/timing";
 import { ClimateCard, SignalLegend, TimingTable } from "@/components/Timing";
 
-export const revalidate = 3600;
+export const revalidate = 900;
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 

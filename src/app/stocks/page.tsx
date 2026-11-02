@@ -6,7 +6,7 @@ import { getInsiderTrades, getMacroEvents, getMarketRows } from "@/lib/data";
 import { fmt } from "@/lib/format";
 import { moodIndex, moodLabel } from "@/lib/signals";
 
-export const revalidate = 3600;
+export const revalidate = 900;
 
 
 export default async function StocksPage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {

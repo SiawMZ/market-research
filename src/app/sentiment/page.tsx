@@ -4,7 +4,7 @@ import { Card, Delta, PageHeader, Section, Stat } from "@/components/ui";
 import { getAsset, getExchangeFlows, getFundMoves, getMarketRows, getNews, getSocial } from "@/lib/data";
 import { fmt } from "@/lib/format";
 
-export const revalidate = 3600;
+export const revalidate = 900;
 
 const sum = (xs: (number | null)[]) => xs.reduce<number>((a, b) => a + (b ?? 0), 0);
 

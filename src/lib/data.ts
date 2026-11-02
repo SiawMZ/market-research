@@ -102,8 +102,11 @@ export const getMarketRows = cache(async (market: Market, kinds?: string[]): Pro
     const price = closes.at(-1)!;
     const ma50 = last(sma(closes, 50));
     const ma200 = last(sma(closes, 200));
-    // Crypto's latest candle is the still-open UTC day, so judge volume on the last complete day.
-    const volIdx = isCrypto && cs.at(-1)!.date >= isoDate(Date.now()) ? cs.length - 2 : cs.length - 1;
+    // A candle from a session still open has partial volume, so judge volume on the last complete day.
+    // Crypto's day ends at UTC midnight; US closes by 21:00 UTC and Bursa by 09:00 UTC.
+    const hourUtc = new Date().getUTCHours();
+    const sessionOpen = isCrypto || (market === "us" ? hourUtc < 21 : hourUtc < 9);
+    const volIdx = sessionOpen && cs.at(-1)!.date >= isoDate(Date.now()) ? cs.length - 2 : cs.length - 1;
     const vols = cs.slice(Math.max(0, volIdx - 20), volIdx).map((c) => c.volume);
     const avgVol = vols.length ? vols.reduce((x, y) => x + y, 0) / vols.length : 0;
     const yearCloses = closes.slice(-year);
@@ -282,6 +285,12 @@ export const getFundMoves = cache(async () => {
 });
 
 /** Most recent run of each collector, for the "data freshness" footer. */
+export const getLastUpdated = cache(async (): Promise<Date | null> => {
+  const db = getDb();
+  const rows = await db.execute<{ at: string | null }>(sql`select max(started_at) as at from ${collectorRuns} where ok`);
+  return rows.rows[0]?.at ? new Date(rows.rows[0].at) : null;
+});
+
 export const getFreshness = cache(async () => {
   const db = getDb();
   const rows = await db.execute<{ name: string; started_at: string; ok: boolean }>(

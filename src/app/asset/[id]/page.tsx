@@ -10,7 +10,7 @@ import { getClimates } from "@/lib/climate";
 import { SIGNALS, assetTiming } from "@/lib/timing";
 import { SignalBadge } from "@/components/Timing";
 
-export const revalidate = 3600;
+export const revalidate = 900;
 
 export default async function AssetPage({ params }: { params: Promise<{ id: string }> }) {
   const id = decodeURIComponent((await params).id);

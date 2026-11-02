@@ -5,7 +5,7 @@ import { getDerivatives, getEtfFlows, getMacroEvents, getMarketRows, getMetric }
 import { fmt } from "@/lib/format";
 import { MacroTable } from "@/components/MacroTable";
 
-export const revalidate = 3600;
+export const revalidate = 900;
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 

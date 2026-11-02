@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Nav } from "@/components/Nav";
+import { getLastUpdated } from "@/lib/data";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -7,7 +8,8 @@ export const metadata: Metadata = {
   description: "Stocks and crypto tracker with two paper portfolios",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const updated = await getLastUpdated().catch(() => null);
   return (
     <html lang="en">
       <body className="antialiased min-h-screen">
@@ -15,6 +17,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <div className="mx-auto max-w-7xl px-4 sm:px-6 h-14 flex items-center gap-8">
             <span className="font-semibold tracking-tight">Market Desk</span>
             <Nav />
+            {updated && (
+              <span className="ml-auto hidden whitespace-nowrap text-xs text-muted md:block">
+                Data updated {updated.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kuala_Lumpur" })} MYT
+              </span>
+            )}
           </div>
         </header>
         <main className="mx-auto max-w-7xl px-4 sm:px-6 py-8">{children}</main>

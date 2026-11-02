@@ -215,7 +215,9 @@ export async function runEngine(opts: { dry: boolean; date?: string }): Promise<
     const sells = orders.filter((o) => o.side === "sell");
     const head = orders.length
       ? `${reason ?? "Risk exits"}. ${buys.length} buy${buys.length === 1 ? "" : "s"}, ${sells.length} sell${sells.length === 1 ? "" : "s"}, ${fmt(fees, "price")} in fees.`
-      : rules.rebalance === "drift"
+      : reason
+        ? `${reason}: no trades, holdings are already within reach of their targets and no stop was hit.`
+        : rules.rebalance === "drift"
         ? `No trades: every market is within ${Math.round(rules.driftBand * 100)}% of its target and no stop was hit.`
         : "No trades: rotation happens weekly and no stop was hit.";
     const lines = [

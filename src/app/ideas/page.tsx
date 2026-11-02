@@ -4,7 +4,7 @@ import { getScoredUniverse } from "@/lib/ideas";
 import { fmtPrice } from "@/lib/format";
 import { FACTOR_LABELS, type FactorKey, type Scored } from "@/lib/scoring";
 
-export const revalidate = 3600;
+export const revalidate = 900;
 
 const top = (rows: Scored[], key: "undervalued" | "potential", n = 6) =>
   rows.filter((r) => r[key] != null).sort((a, b) => b[key]! - a[key]!).slice(0, n);

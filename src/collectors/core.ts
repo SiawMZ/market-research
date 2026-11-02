@@ -69,10 +69,13 @@ export function batch<T extends PgTable>(
   return { label, table, target, rows: rows as Record<string, unknown>[] };
 }
 
+/** light: only the newest candles and no slow extras, for the hourly refresh. markets: limit stocks to open sessions. */
+export type RunOpts = { light?: boolean; markets?: ("us" | "my")[] };
+
 export type Collector = {
   name: string;
   description: string;
-  run: () => Promise<Batch[]>;
+  run: (opts?: RunOpts) => Promise<Batch[]>;
 };
 
 export async function upsert(db: Db, b: Batch) {

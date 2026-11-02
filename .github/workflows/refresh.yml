@@ -1,0 +1,27 @@
+name: Hourly data refresh
+
+# Light update of what is trading now: crypto every hour, stocks during their sessions, news and Reddit every 6 hours.
+# Paper trading stays in the daily job (collect.yml), so it always works from daily closes.
+on:
+  schedule:
+    - cron: "15 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: refresh # separate from the daily job, so a queued refresh can never replace a queued daily run
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run collect -- --refresh
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

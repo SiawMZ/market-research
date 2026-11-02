@@ -7,7 +7,7 @@ import { fmt } from "@/lib/format";
 import { maxDrawdown, volatility } from "@/lib/indicators";
 import { replay } from "@/lib/ledger";
 
-export const revalidate = 3600;
+export const revalidate = 900;
 
 type Portfolio = Awaited<ReturnType<typeof getPortfolios>>[number];
 type View = "balanced" | "aggressive" | "compare";

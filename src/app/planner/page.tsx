@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui";
 import { PORTFOLIOS } from "@/config/portfolios";
 import { getScoredUniverse, lean } from "@/lib/ideas";
 
-export const revalidate = 3600;
+export const revalidate = 900;
 
 export default async function PlannerPage() {
   const u = await getScoredUniverse();

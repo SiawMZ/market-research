@@ -37,7 +37,7 @@ const BinanceKlines = z.array(z.tuple([z.number(), z.string(), z.string(), z.str
 export const cryptoMarket: Collector = {
   name: "crypto-market",
   description: "CoinGecko top coins + global stats, Binance daily candles",
-  async run() {
+  async run(opts) {
     const date = today();
     const markets = await fetchJson(
       `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${CRYPTO_TOP_N + 30}&page=1&price_change_percentage=7d,30d`,
@@ -61,7 +61,7 @@ export const cryptoMarket: Collector = {
       const sym = c.symbol.toUpperCase();
       try {
         const k = await fetchJson(
-          `https://data-api.binance.vision/api/v3/klines?symbol=${sym}USDT&interval=1d&limit=730`,
+          `https://data-api.binance.vision/api/v3/klines?symbol=${sym}USDT&interval=1d&limit=${opts?.light ? 3 : 730}`,
           BinanceKlines,
         );
         for (const [t, o, h, l, cl, , , qv] of k) {
